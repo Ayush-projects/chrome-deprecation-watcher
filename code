@@ -1,0 +1,78 @@
+function checkForDeprecations(
+  doc: vscode.TextDocument,
+  deprecations: DeprecatedAPI[],
+  collection: vscode.DiagnosticCollection
+) {
+  console.log(`(checkForDeprecations) Checking doc: ${doc.fileName} with ${deprecations.length} deprecations...`);
+
+  // We keep the code scanning the same
+  const text = doc.getText();
+  const diagnostics: vscode.Diagnostic[] = [];
+  // We'll also collect decoration info
+  const decorationOptions: vscode.DecorationOptions[] = [];
+
+  for (const dep of deprecations) {
+    const escaped = dep.apiName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(`\\b${escaped}\\b`, 'g');
+
+    let match;
+    while ((match = regex.exec(text)) !== null) {
+      const startIndex = match.index;
+      const endIndex = startIndex + dep.apiName.length;
+      const range = new vscode.Range(
+        doc.positionAt(startIndex),
+        doc.positionAt(endIndex)
+      );
+
+      // 1) Create the diagnostic
+      const message = `The API "${dep.apiName}" is marked as ${dep.changeType}. ${dep.description}`;
+      diagnostics.push({
+        severity: vscode.DiagnosticSeverity.Warning,
+        range,
+        message,
+        source: 'Chrome Deprecation Watcher'
+      });
+
+      // 2) Create a decoration with a short label (or the entire message if you like)
+      decorationOptions.push({
+        range,
+        renderOptions: {
+          after: {
+            // We'll show a short label, or you can embed the entire message
+            contentText: `[${dep.changeType}] ${dep.apiName}`
+          }
+        }
+      });
+    }
+  }
+
+  console.log(`(checkForDeprecations) Found ${diagnostics.length} matches in ${doc.fileName}.`);
+
+  // Update the diagnostic collection
+  collection.set(doc.uri, diagnostics);
+
+  // Now apply the decorations to the correct editor
+  // 1) find if there's a visible editor for this document
+  const editor = vscode.window.visibleTextEditors.find(e => e.document.uri.toString() === doc.uri.toString());
+  if (!editor) {
+    // if the doc is open but not visible in an editor, skip decorating
+    return;
+  }
+
+  // 2) Apply our decoration
+  editor.setDecorations(deprecationDecorationType, decorationOptions);
+}
+
+
+
+
+// A "warning" style decoration that shows a message to the right of matched text.
+const deprecationDecorationType = vscode.window.createTextEditorDecorationType({
+  after: {
+    margin: '0 0 0 1rem',   // spacing before the message
+    color: '#f00',          // red text
+    backgroundColor: 'rgba(255, 200, 200, 0.3)', // light red background
+    border: '1px solid #f00',
+    borderRadius: '3px'
+  }
+});
